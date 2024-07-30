@@ -77,7 +77,7 @@ public:
       }
 
       idx_ = new_idx;
-      offset -= current_offset;
+      offset += current_offset;
     }
 
     assert(offset == 0);
