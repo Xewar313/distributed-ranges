@@ -77,6 +77,7 @@ public:
       }
 
       idx_ = new_idx;
+      offset -= current_offset;
     }
 
     return *this;
