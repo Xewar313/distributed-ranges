@@ -80,6 +80,7 @@ public:
       offset -= current_offset;
     }
 
+    assert(offset == 0);
     return *this;
   }
 
