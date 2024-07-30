@@ -5,8 +5,8 @@
 #pragma once
 
 #include <dr/sp/containers/matrix_entry.hpp>
-#include <memory>
 #include <map>
+#include <memory>
 
 namespace dr::sp {
 
@@ -18,7 +18,7 @@ public:
   using difference_type = std::ptrdiff_t;
 
   using scalar_type = T;
-  using scalar_reference = T&;
+  using scalar_reference = T &;
 
   using value_type = dr::sp::matrix_entry<T, I>;
 
@@ -34,13 +34,11 @@ public:
 
   constexpr coo_matrix_accessor() noexcept = default;
   constexpr ~coo_matrix_accessor() noexcept = default;
-  constexpr coo_matrix_accessor(const coo_matrix_accessor &) noexcept =
-      default;
+  constexpr coo_matrix_accessor(const coo_matrix_accessor &) noexcept = default;
   constexpr coo_matrix_accessor &
   operator=(const coo_matrix_accessor &) noexcept = default;
 
-  constexpr coo_matrix_accessor(Iter iter) noexcept
-      : iter_(iter) {}
+  constexpr coo_matrix_accessor(Iter iter) noexcept : iter_(iter) {}
 
   auto &operator++() {
     iter_++;
@@ -77,10 +75,8 @@ private:
   Iter iter_;
 };
 
-
 template <typename T, typename I, typename L>
 using coo_matrix_iterator = dr::iterator_adaptor<coo_matrix_accessor<T, I, L>>;
-
 
 template <typename T, typename I, typename Allocator = std::allocator<T>>
 class coo_matrix {
@@ -98,7 +94,8 @@ public:
 
   using backend_allocator_type = typename std::allocator_traits<
       allocator_type>::template rebind_alloc<std::pair<const key_type, T>>;
-  using backend_type = std::map<key_type, T, std::less<key_type>,  backend_allocator_type>;
+  using backend_type =
+      std::map<key_type, T, std::less<key_type>, backend_allocator_type>;
 
   using iterator = coo_matrix_iterator<T, I, typename backend_type::iterator>;
 
@@ -111,9 +108,7 @@ public:
 
   dr::index<I> shape() const noexcept { return shape_; }
 
-  size_type size() const noexcept { 
-    return tuples_.size(); 
-  }
+  size_type size() const noexcept { return tuples_.size(); }
 
   // void reserve(size_type new_cap) { tuples_.reserve(new_cap); }
 
@@ -137,12 +132,13 @@ public:
     }
   }
 
-  void push_back(const value_type &value) { 
+  void push_back(const value_type &value) {
     auto [index, val] = value;
-    tuples_[index] = val; 
-    }
+    tuples_[index] = val;
+  }
 
-  // template <typename InputIt> void assign_tuples(InputIt first, InputIt last) {
+  // template <typename InputIt> void assign_tuples(InputIt first, InputIt last)
+  // {
   //   tuples_.assign(first, last);
   // }
 

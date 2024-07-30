@@ -149,7 +149,7 @@ public:
   // dr::sp::device_allocator<T>>>;
   using iterator =
       distributed_sparse_matrix_iterator<std::span<segment_type> &&>;
-  
+
   sparse_matrix(key_type shape)
       : shape_(shape), partition_(default_partition_()) {
     init_();
@@ -171,7 +171,8 @@ public:
     init_();
   }
 
-  sparse_matrix(dr::sp::csr_matrix_view<T, I> local_mat, const matrix_partition &partition)
+  sparse_matrix(dr::sp::csr_matrix_view<T, I> local_mat,
+                const matrix_partition &partition)
       : shape_(local_mat.shape()), partition_(partition.clone()) {
     init_csr_(local_mat);
   }
@@ -359,21 +360,17 @@ private:
         std::size_t tn = std::min<std::size_t>(tile_shape_[1],
                                                shape()[1] - j * tile_shape_[1]);
 
-
-        dr::index<I> row_bounds(i * tile_shape_[0],
-                              i * tile_shape_[0] + tm);
-        dr::index<I> column_bounds(j * tile_shape_[1],
-                                 j * tile_shape_[1] + tn);
+        dr::index<I> row_bounds(i * tile_shape_[0], i * tile_shape_[0] + tm);
+        dr::index<I> column_bounds(j * tile_shape_[1], j * tile_shape_[1] + tn);
 
         auto local_submat = local_mat.submatrix(row_bounds, column_bounds);
 
-        auto submatrix_shape = dr::index<I>(row_bounds[1] - row_bounds[0],
-                                          column_bounds[1] - column_bounds[0]);
+        auto submatrix_shape = dr::index<I>(
+            row_bounds[1] - row_bounds[0], column_bounds[1] - column_bounds[0]);
 
-        auto csr = __detail::convert_to_csr(
-          local_submat, submatrix_shape, rng::distance(local_submat),
-          std::allocator<T>{});
-
+        auto csr = __detail::convert_to_csr(local_submat, submatrix_shape,
+                                            rng::distance(local_submat),
+                                            std::allocator<T>{});
 
         auto device = dr::sp::devices()[rank];
         dr::sp::device_allocator<T> alloc(dr::sp::context(), device);
@@ -389,7 +386,7 @@ private:
         dr::sp::device_vector<I, dr::sp::device_allocator<I>> colind(
             csr.size(), i_alloc, rank);
 
-        //TODO add async option
+        // TODO add async option
         dr::sp::copy(csr.values_data(), csr.values_data() + csr.size(),
                      values.data());
         dr::sp::copy(csr.rowptr_data(), csr.rowptr_data() + tm + 1,
@@ -468,9 +465,9 @@ private:
   }
 
 private:
-
   std::unique_ptr<dr::sp::matrix_partition> default_partition_() {
-    auto ptr = new block_cyclic({dr::sp::tile::div, dr::sp::tile::div}, {dr::sp::nprocs(), 1});
+    auto ptr = new block_cyclic({dr::sp::tile::div, dr::sp::tile::div},
+                                {dr::sp::nprocs(), 1});
     return std::make_unique<dr::sp::matrix_partition>(ptr);
   }
   key_type shape_;

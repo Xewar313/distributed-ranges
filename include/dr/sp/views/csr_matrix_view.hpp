@@ -222,9 +222,8 @@ csr_matrix_view(TIter, IIter, IIter, Args &&...)
     -> csr_matrix_view<std::iter_value_t<TIter>, std::iter_value_t<IIter>,
                        TIter, IIter>;
 
-
 namespace __detail {
-  
+
 // Preconditions:
 // 1) `tuples` sorted by row, column
 // 2) `tuples` has shape `shape`
@@ -276,7 +275,6 @@ auto convert_to_csr(Tuples &&tuples, dr::index<> shape, std::size_t nnz,
   return csr_matrix_view(values, rowptr, colind,
                          dr::index<I>(shape[0], shape[1]), nnz, 0);
 }
-
 
 template <typename T, typename I, typename Allocator, typename... Args>
 void destroy_csr_matrix_view(dr::sp::csr_matrix_view<T, I, Args...> view,

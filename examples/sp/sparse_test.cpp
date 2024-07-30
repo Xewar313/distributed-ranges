@@ -22,7 +22,7 @@ int main(int argc, char **argv) {
 
   fmt::print("Reading in matrix file {}\n", fname);
   auto a = dr::sp::mmread<T, I>(fname);
-  
+
   dr::sp::print_matrix(a, "a");
 
   return 0;
