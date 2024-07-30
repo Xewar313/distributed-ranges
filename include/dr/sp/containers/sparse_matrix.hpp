@@ -149,14 +149,14 @@ public:
   // dr::sp::device_allocator<T>>>;
   using iterator =
       distributed_sparse_matrix_iterator<std::span<segment_type> &&>;
-
+  
   sparse_matrix(key_type shape)
-      : shape_(shape), partition_(new dr::sp::block_cyclic()) {
+      : shape_(shape), partition_(default_partition_()) {
     init_();
   }
 
   sparse_matrix(key_type shape, double density)
-      : shape_(shape), partition_(new dr::sp::block_cyclic()) {
+      : shape_(shape), partition_(default_partition_()) {
     init_random_(density);
   }
 
@@ -169,6 +169,11 @@ public:
   sparse_matrix(key_type shape, const matrix_partition &partition)
       : shape_(shape), partition_(partition.clone()) {
     init_();
+  }
+
+  sparse_matrix(dr::sp::csr_matrix_view<T, I> local_mat, const matrix_partition &partition)
+      : shape_(local_mat.shape()), partition_(partition.clone()) {
+    init_csr_(local_mat);
   }
 
   size_type size() const noexcept { return total_nnz_; }
@@ -336,6 +341,75 @@ private:
     segments_ = generate_segments_();
   }
 
+  void init_csr_(dr::sp::csr_matrix_view<T, I> local_mat) {
+    grid_shape_ = key_type(partition_->grid_shape(shape()));
+    tile_shape_ = key_type(partition_->tile_shape(shape()));
+
+    values_.reserve(grid_shape_[0] * grid_shape_[1]);
+    rowptr_.reserve(grid_shape_[0] * grid_shape_[1]);
+    colind_.reserve(grid_shape_[0] * grid_shape_[1]);
+    nnz_.reserve(grid_shape_[0] * grid_shape_[1]);
+
+    for (std::size_t i = 0; i < grid_shape_[0]; i++) {
+      for (std::size_t j = 0; j < grid_shape_[1]; j++) {
+        std::size_t rank = partition_->tile_rank(shape(), {i, j});
+
+        std::size_t tm = std::min<std::size_t>(tile_shape_[0],
+                                               shape()[0] - i * tile_shape_[0]);
+        std::size_t tn = std::min<std::size_t>(tile_shape_[1],
+                                               shape()[1] - j * tile_shape_[1]);
+
+
+        dr::index<I> row_bounds(i * tile_shape_[0],
+                              i * tile_shape_[0] + tm);
+        dr::index<I> column_bounds(j * tile_shape_[1],
+                                 j * tile_shape_[1] + tn);
+
+        auto local_submat = local_mat.submatrix(row_bounds, column_bounds);
+
+        auto submatrix_shape = dr::index<I>(row_bounds[1] - row_bounds[0],
+                                          column_bounds[1] - column_bounds[0]);
+
+        auto csr = __detail::convert_to_csr(
+          local_submat, submatrix_shape, rng::distance(local_submat),
+          std::allocator<T>{});
+
+
+        auto device = dr::sp::devices()[rank];
+        dr::sp::device_allocator<T> alloc(dr::sp::context(), device);
+        dr::sp::device_allocator<I> i_alloc(dr::sp::context(), device);
+
+        std::size_t nnz = csr.size();
+
+        dr::sp::device_vector<T, dr::sp::device_allocator<T>> values(
+            csr.size(), alloc, rank);
+        dr::sp::device_vector<I, dr::sp::device_allocator<I>> rowptr(
+            tm + 1, i_alloc, rank);
+
+        dr::sp::device_vector<I, dr::sp::device_allocator<I>> colind(
+            csr.size(), i_alloc, rank);
+
+        //TODO add async option
+        dr::sp::copy(csr.values_data(), csr.values_data() + csr.size(),
+                     values.data());
+        dr::sp::copy(csr.rowptr_data(), csr.rowptr_data() + tm + 1,
+                     rowptr.data());
+        dr::sp::copy(csr.colind_data(), csr.colind_data() + csr.size(),
+                     colind.data());
+
+        values_.push_back(std::move(values));
+        rowptr_.emplace_back(std::move(rowptr));
+        colind_.emplace_back(std::move(colind));
+        nnz_.push_back(nnz);
+        total_nnz_ += nnz;
+
+        __detail::destroy_csr_matrix_view(csr, std::allocator<T>{});
+      }
+    }
+    tiles_ = generate_tiles_();
+    segments_ = generate_segments_();
+  }
+
   void init_random_(double density) {
     grid_shape_ = key_type(partition_->grid_shape(shape()));
     tile_shape_ = key_type(partition_->tile_shape(shape()));
@@ -394,6 +468,11 @@ private:
   }
 
 private:
+
+  std::unique_ptr<dr::sp::matrix_partition> default_partition_() {
+    auto ptr = new block_cyclic({dr::sp::tile::div, dr::sp::tile::div}, {dr::sp::nprocs(), 1});
+    return std::make_unique<dr::sp::matrix_partition>(ptr);
+  }
   key_type shape_;
   key_type grid_shape_;
   key_type tile_shape_;

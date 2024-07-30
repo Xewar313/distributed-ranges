@@ -222,4 +222,72 @@ csr_matrix_view(TIter, IIter, IIter, Args &&...)
     -> csr_matrix_view<std::iter_value_t<TIter>, std::iter_value_t<IIter>,
                        TIter, IIter>;
 
+
+namespace __detail {
+  
+// Preconditions:
+// 1) `tuples` sorted by row, column
+// 2) `tuples` has shape `shape`
+// 3) `tuples` has `nnz` elements
+template <typename Tuples, typename Allocator>
+auto convert_to_csr(Tuples &&tuples, dr::index<> shape, std::size_t nnz,
+                    Allocator &&allocator) {
+  auto &&[index, v] = *tuples.begin();
+  auto &&[i, j] = index;
+
+  using T = std::remove_reference_t<decltype(v)>;
+  using I = std::remove_reference_t<decltype(i)>;
+
+  typename std::allocator_traits<Allocator>::template rebind_alloc<I>
+      i_allocator(allocator);
+
+  T *values = allocator.allocate(nnz);
+  I *rowptr = i_allocator.allocate(shape[0] + 1);
+  I *colind = i_allocator.allocate(nnz);
+
+  rowptr[0] = 0;
+
+  std::size_t r = 0;
+  std::size_t c = 0;
+  for (auto iter = tuples.begin(); iter != tuples.end(); ++iter) {
+    auto &&[index, value] = *iter;
+    auto &&[i, j] = index;
+
+    values[c] = value;
+    colind[c] = j;
+
+    while (r < i) {
+      assert(r + 1 <= shape[0]);
+      // throw std::runtime_error("csr_matrix_impl_: given invalid matrix");
+      rowptr[r + 1] = c;
+      r++;
+    }
+    c++;
+
+    assert(c <= nnz);
+    // throw std::runtime_error("csr_matrix_impl_: given invalid matrix");
+  }
+
+  while (r < shape[0]) {
+    rowptr[r + 1] = nnz;
+    r++;
+  }
+
+  return csr_matrix_view(values, rowptr, colind,
+                         dr::index<I>(shape[0], shape[1]), nnz, 0);
+}
+
+
+template <typename T, typename I, typename Allocator, typename... Args>
+void destroy_csr_matrix_view(dr::sp::csr_matrix_view<T, I, Args...> view,
+                             Allocator &&alloc) {
+  alloc.deallocate(view.values_data(), view.size());
+  typename std::allocator_traits<Allocator>::template rebind_alloc<I> i_alloc(
+      alloc);
+  i_alloc.deallocate(view.colind_data(), view.size());
+  i_alloc.deallocate(view.rowptr_data(), view.shape()[0] + 1);
+}
+
+} // namespace __detail
+
 } // namespace dr::sp

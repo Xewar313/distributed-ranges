@@ -4,20 +4,26 @@
 
 #include <cstdio>
 #include <dr/sp.hpp>
+#include <fmt/core.h>
 
 int main(int argc, char **argv) {
   auto devices = dr::sp::get_numa_devices(sycl::default_selector_v);
   dr::sp::init(devices);
 
-  dr::sp::sparse_matrix<float> x({100, 100}, 0.01);
-
-  printf("%lu x %lu matrix with %lu stored values.\n", x.shape()[0],
-         x.shape()[1], x.size());
-
-  for (auto &&[idx, v] : x) {
-    auto &&[i, j] = idx;
-    printf("(%lu, %lu): %f\n", i, j, (float)v);
+  if (argc != 2) {
+    fmt::print("usage: ./sparse_test [matrix market file]\n");
+    return 1;
   }
+
+  std::string fname(argv[1]);
+
+  using T = float;
+  using I = int;
+
+  fmt::print("Reading in matrix file {}\n", fname);
+  auto a = dr::sp::mmread<T, I>(fname);
+  
+  dr::sp::print_matrix(a, "a");
 
   return 0;
 }
