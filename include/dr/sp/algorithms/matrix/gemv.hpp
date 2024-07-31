@@ -96,7 +96,9 @@ void gemv(C &&c, dr::sp::sparse_matrix<T, I> &a, B &&b,
     auto event = dr::sp::copy_async(b.begin(), b.end(), l_b.begin());
     copy_events.push_back(event);
   }
-
+  __detail::wait(comp_events); //for some reason that makes it faster
+  
+  comp_events.clear();
   for (std::size_t i = 0; i < a.grid_shape()[0]; i++) {
     auto a_tile = a.tile(dr::index<I>(i, 0));
 
@@ -106,8 +108,7 @@ void gemv(C &&c, dr::sp::sparse_matrix<T, I> &a, B &&b,
 
     auto &&q = __detail::queue(a_tile.rank());
 
-    auto event = __detail::local_gemv(q, a_tile, b_iter, c_iter,
-                                      {copy_events[a_tile.rank()]});
+    auto event = __detail::local_gemv(q, a_tile, b_iter, c_iter);
     comp_events.push_back(event);
   }
 

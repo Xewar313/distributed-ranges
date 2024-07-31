@@ -420,9 +420,9 @@ private:
 
 private:
   std::unique_ptr<dr::sp::matrix_partition> default_partition_() {
-    auto ptr = new block_cyclic({dr::sp::tile::div, dr::sp::tile::div},
+    auto ptr = block_cyclic({dr::sp::tile::div, dr::sp::tile::div},
                                 {dr::sp::nprocs(), 1});
-    return std::make_unique<dr::sp::matrix_partition>(ptr);
+    return std::make_unique<dr::sp::block_cyclic>(ptr);
   }
   key_type shape_;
   key_type grid_shape_;

@@ -98,6 +98,7 @@ public:
       std::map<key_type, T, std::less<key_type>, backend_allocator_type>;
 
   using iterator = coo_matrix_iterator<T, I, typename backend_type::iterator>;
+  using const_iterator = coo_matrix_iterator<T, I, typename backend_type::iterator>;
 
   using reference = dr::sp::matrix_ref<T, I>;
   using const_reference = dr::sp::matrix_ref<std::add_const_t<T>, I>;
@@ -110,15 +111,13 @@ public:
 
   size_type size() const noexcept { return tuples_.size(); }
 
-  // void reserve(size_type new_cap) { tuples_.reserve(new_cap); }
-
   iterator begin() noexcept { return iterator(tuples_.begin()); }
 
-  // const_iterator begin() const noexcept { return tuples_.begin(); }
+  const_iterator begin() const noexcept { return iterator(tuples_.begin()); }
 
   iterator end() noexcept { return iterator(tuples_.end()); }
 
-  // const_iterator end() const noexcept { return tuples_.end(); }
+  const_iterator end() const noexcept { return iterator(tuples_.end()); }
 
   // template <typename InputIt> void insert(InputIt first, InputIt last) {
   //   for (auto iter = first; iter != last; ++iter) {
