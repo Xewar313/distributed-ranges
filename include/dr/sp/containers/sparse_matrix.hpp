@@ -13,6 +13,7 @@
 #include <dr/sp/init.hpp>
 #include <dr/sp/util/generate_random.hpp>
 #include <dr/sp/views/csr_matrix_view.hpp>
+#include <fmt/core.h>
 #include <iterator>
 
 namespace dr::sp {
@@ -46,7 +47,13 @@ public:
   constexpr distributed_range_accessor(Segments segments, size_type segment_id,
                                        size_type idx) noexcept
       : segments_(rng::views::all(std::forward<Segments>(segments))),
-        segment_id_(segment_id), idx_(idx) {}
+        segment_id_(segment_id), idx_(idx) {
+          if (idx_ == 0 && segment_id_ == 0) {
+            while (idx_ >= rng::size((*(segments_.begin() + segment_id_)))) {
+        segment_id_++;
+            }
+          }
+        }
 
   constexpr distributed_range_accessor &
   operator+=(difference_type offset) noexcept {
@@ -59,7 +66,7 @@ public:
       idx_ += current_offset;
       offset -= current_offset;
 
-      if (idx_ >= rng::size((*(segments_.begin() + segment_id_)))) {
+      while (idx_ >= rng::size((*(segments_.begin() + segment_id_))) && segment_id_ < segments_.size()) {
         segment_id_++;
         idx_ = 0;
       }
@@ -71,7 +78,7 @@ public:
 
       difference_type new_idx = difference_type(idx_) - current_offset;
 
-      if (new_idx < 0) {
+      while (new_idx < 0 && segment_id_ > 0) {
         segment_id_--;
         new_idx = rng::size(*(segments_.begin() + segment_id_)) - 1;
       }
@@ -79,7 +86,6 @@ public:
       idx_ = new_idx;
       offset += current_offset;
     }
-
     assert(offset == 0);
     return *this;
   }
@@ -356,24 +362,33 @@ private:
     for (std::size_t i = 0; i < grid_shape_[0]; i++) {
       for (std::size_t j = 0; j < grid_shape_[1]; j++) {
         std::size_t rank = partition_->tile_rank(shape(), {i, j});
-
+        dr::sp::csr_matrix_view<T, I> csr;
         std::size_t tm = std::min<std::size_t>(tile_shape_[0],
-                                               shape()[0] - i * tile_shape_[0]);
-        std::size_t tn = std::min<std::size_t>(tile_shape_[1],
-                                               shape()[1] - j * tile_shape_[1]);
+                                              shape()[0] - i * tile_shape_[0]);
+        if (grid_shape_[1] == 1) {
+          csr = local_mat.get_horizontal_slice(i * tile_shape_[0], i * tile_shape_[0] + tm);
+        }
+        else {
+          std::size_t tn = std::min<std::size_t>(tile_shape_[1],
+                                                shape()[1] - j * tile_shape_[1]);
 
-        dr::index<I> row_bounds(i * tile_shape_[0], i * tile_shape_[0] + tm);
-        dr::index<I> column_bounds(j * tile_shape_[1], j * tile_shape_[1] + tn);
+          dr::index<I> row_bounds(i * tile_shape_[0], i * tile_shape_[0] + tm);
+          dr::index<I> column_bounds(j * tile_shape_[1], j * tile_shape_[1] + tn);
 
-        auto local_submat = local_mat.submatrix(row_bounds, column_bounds);
+          auto local_submat = local_mat.submatrix(row_bounds, column_bounds);
 
-        auto submatrix_shape = dr::index<I>(
-            row_bounds[1] - row_bounds[0], column_bounds[1] - column_bounds[0]);
+          auto submatrix_shape = dr::index<I>(
+              row_bounds[1] - row_bounds[0], column_bounds[1] - column_bounds[0]);
 
-        auto csr = __detail::convert_to_csr(local_submat, submatrix_shape,
-                                            rng::distance(local_submat),
-                                            std::allocator<T>{});
-
+          csr = __detail::convert_to_csr(local_submat, submatrix_shape,
+                                              rng::distance(local_submat),
+                                              std::allocator<T>{});
+        }
+        
+        // for (auto &&[index, val]: csr) {
+        //   auto [m, n] = index;
+        //   fmt::print("value: {} {} {} {} {}\n", m, n, j , i, val);
+        // }
         auto device = dr::sp::devices()[rank];
         dr::sp::device_allocator<T> alloc(dr::sp::context(), device);
         dr::sp::device_allocator<I> i_alloc(dr::sp::context(), device);
@@ -388,7 +403,6 @@ private:
         dr::sp::device_vector<I, dr::sp::device_allocator<I>> colind(
             csr.size(), i_alloc, rank);
 
-        // TODO add async option
         dr::sp::copy(csr.values_data(), csr.values_data() + csr.size(),
                      values.data());
         dr::sp::copy(csr.rowptr_data(), csr.rowptr_data() + tm + 1,
@@ -401,8 +415,6 @@ private:
         colind_.emplace_back(std::move(colind));
         nnz_.push_back(nnz);
         total_nnz_ += nnz;
-
-        __detail::destroy_csr_matrix_view(csr, std::allocator<T>{});
       }
     }
     tiles_ = generate_tiles_();

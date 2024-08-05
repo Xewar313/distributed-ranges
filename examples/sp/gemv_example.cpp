@@ -10,29 +10,36 @@ int main(int argc, char **argv) {
   auto devices = sp::get_numa_devices(sycl::gpu_selector_v);
   sp::init(devices);
 
+  if (argc != 2) {
+    std::cout << "usage: ./sparse_test [matrix market file]\n";
+    return 1;
+  }
+
+  std::string fname(argv[1]);
+
   for (auto &device : devices) {
     std::cout << "  Device: " << device.get_info<sycl::info::device::name>()
               << "\n";
   }
 
   using T = float;
+  using I = long;
 
-  sp::distributed_vector<T, sp::device_allocator<T>> b(100);
+  std::cout << "Reading in matrix file " << fname << "\n";
+  auto a = dr::sp::mmread<T, I>(fname);
 
-  sp::duplicated_vector<T> b_duplicated(100);
+  sp::distributed_vector<T, sp::device_allocator<T>> b(a.shape()[1]);
+
+  sp::duplicated_vector<T> b_duplicated(a.shape()[1]);
 
   sp::for_each(sp::par_unseq, sp::enumerate(b), [](auto &&tuple) {
     auto &&[idx, value] = tuple;
     value = 1;
   });
 
-  sp::distributed_vector<T, sp::device_allocator<T>> c(100);
+  sp::distributed_vector<T, sp::device_allocator<T>> c(a.shape()[0]);
 
   sp::for_each(sp::par_unseq, c, [](auto &&v) { v = 0; });
-
-  sp::sparse_matrix<T> a(
-      {100, 100}, 0.01,
-      sp::block_cyclic({sp::tile::div, sp::tile::div}, {sp::nprocs(), 1}));
 
   printf("a tiles: %lu x %lu\n", a.grid_shape()[0], a.grid_shape()[1]);
 
@@ -43,6 +50,15 @@ int main(int argc, char **argv) {
   sp::gemv(c, a, b, b_duplicated);
 
   sp::print_range(c, "c");
+
+  auto iter = a.end();
+  while (iter > a.begin()) {
+    iter--;
+    auto [index, val] = *iter;
+    auto [m, n] = index;
+
+    std::cout << m << " " << n << "\n";
+  }
 
   return 0;
 }

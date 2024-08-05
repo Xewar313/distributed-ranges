@@ -50,7 +50,7 @@ auto custom_gemv(sycl::queue &q, csr_matrix_view<T, I, Args...> a, Iter b,
   return event;
 }
 
-#ifdef USE_MKL
+#ifdef false
 
 template <typename T, typename I, std::random_access_iterator Iter,
           typename... Args>

@@ -7,6 +7,7 @@
 #include <dr/detail/index.hpp>
 #include <dr/sp/containers/matrix_entry.hpp>
 #include <iterator>
+#include <fmt/core.h>
 
 namespace dr::sp {
 
@@ -42,18 +43,9 @@ public:
 
   constexpr csr_matrix_view_accessor(TIter values, IIter rowptr, IIter colind,
                                      size_type idx, index_type row,
-                                     size_type row_dim) noexcept
+                                     size_type row_dim, index_type row_offset) noexcept
       : values_(values), rowptr_(rowptr), colind_(colind), idx_(idx), row_(row),
-        row_dim_(row_dim), idx_offset_(key_type{0, 0}) {
-    fast_forward_row();
-  }
-
-  constexpr csr_matrix_view_accessor(TIter values, IIter rowptr, IIter colind,
-                                     size_type idx, index_type row,
-                                     size_type row_dim,
-                                     key_type idx_offset) noexcept
-      : values_(values), rowptr_(rowptr), colind_(colind), idx_(idx), row_(row),
-        row_dim_(row_dim), idx_offset_(idx_offset) {
+        row_dim_(row_dim), row_offset_(row_offset) {
     fast_forward_row();
   }
 
@@ -62,7 +54,7 @@ public:
   // That is:
   // Advance `row_` until idx_ >= rowptr_[row_] && idx_ < rowptr_[row_+1]
   void fast_forward_row() noexcept {
-    while (row_ < row_dim_ - 1 && idx_ >= rowptr_[row_ + 1]) {
+    while (row_ < row_dim_ - 1 && idx_ >= get_row_ptr(row_ + 1)) {
       row_++;
     }
   }
@@ -72,7 +64,7 @@ public:
   // That is:
   // Retreat `row_` until idx_ >= rowptr_[row_] && idx_ < rowptr_[row_+1]
   void fast_backward_row() noexcept {
-    while (idx_ < rowptr_[row_]) {
+    while (idx_ < get_row_ptr(row_)) {
       row_--;
     }
   }
@@ -102,19 +94,23 @@ public:
   }
 
   constexpr reference operator*() const noexcept {
+    // fmt::print("offset: {}\n", row_);
     return reference(
-        key_type(row_ + idx_offset_[0], colind_[idx_] + idx_offset_[1]),
+        key_type(row_ + row_offset_, colind_[idx_]),
         values_[idx_]);
   }
 
 private:
+  auto get_row_ptr(index_type row) const {
+    return rowptr_[row] - rowptr_[0];
+  }
   TIter values_;
   IIter rowptr_;
   IIter colind_;
   size_type idx_;
   index_type row_;
   size_type row_dim_;
-  key_type idx_offset_;
+  index_type row_offset_;
 };
 
 template <typename T, typename I, typename TIter, typename IIter>
@@ -139,15 +135,19 @@ public:
 
   using iterator = csr_matrix_view_iterator<T, I, TIter, IIter>;
 
+  csr_matrix_view() = default;
+
+  csr_matrix_view(TIter values, IIter rowptr, IIter colind, key_type shape,
+                  size_type nnz, size_type rank, key_type id_offset)
+      : values_(values), rowptr_(rowptr), colind_(colind), shape_(shape),
+        nnz_(nnz), rank_(rank), row_offset_(id_offset[0]) {
+          assert(id_offset[1] == 0); // csr views should only be distributed by rows
+        }
+
   csr_matrix_view(TIter values, IIter rowptr, IIter colind, key_type shape,
                   size_type nnz, size_type rank)
       : values_(values), rowptr_(rowptr), colind_(colind), shape_(shape),
-        nnz_(nnz), rank_(rank), idx_offset_(key_type{0, 0}) {}
-
-  csr_matrix_view(TIter values, IIter rowptr, IIter colind, key_type shape,
-                  size_type nnz, size_type rank, key_type idx_offset)
-      : values_(values), rowptr_(rowptr), colind_(colind), shape_(shape),
-        nnz_(nnz), rank_(rank), idx_offset_(idx_offset) {}
+        nnz_(nnz), rank_(rank), row_offset_(0) {}
 
   key_type shape() const noexcept { return shape_; }
 
@@ -156,17 +156,24 @@ public:
   std::size_t rank() const { return rank_; }
 
   iterator begin() const {
-    return iterator(values_, rowptr_, colind_, 0, 0, shape()[1], idx_offset_);
+    return iterator(values_, rowptr_, colind_, 0, 0, shape()[0], row_offset_);
   }
 
   iterator end() const {
-    return iterator(values_, rowptr_, colind_, nnz_, shape()[1], shape()[1],
-                    idx_offset_);
+    return iterator(values_, rowptr_, colind_, nnz_, shape()[0], shape()[0], row_offset_);
+  }
+
+  csr_matrix_view get_horizontal_slice(I row_start, I row_end) const {
+    key_type new_shape = {row_end - row_start, shape()[1]};
+    index_type offset = get_row_ptr(row_start);
+    index_type guardian = get_row_ptr(row_end);
+    size_type new_nnz = guardian - offset;
+    return csr_matrix_view<T, I>(values_ + offset, rowptr_  + row_start, colind_  + offset, new_shape, new_nnz, rank_, {row_start + row_offset_, 0});
   }
 
   auto row(I row_index) const {
-    I first = rowptr_[row_index];
-    I last = rowptr_[row_index + 1];
+    I first = get_row_ptr(row_index);
+    I last = get_row_ptr(row_index + 1);
 
     TIter values = values_;
     IIter colind = colind_;
@@ -179,33 +186,27 @@ public:
   }
 
   auto submatrix(key_type rows, key_type columns) const {
-    return rng::views::iota(rows[0], rows[1]) |
-           rng::views::transform([=, *this](auto &&row_index) {
-             return row(row_index) | rng::views::drop_while([=](auto &&e) {
-                      auto &&[index, v] = e;
-                      return index[1] < columns[0];
-                    }) |
-                    rng::views::take_while([=](auto &&e) {
-                      auto &&[index, v] = e;
-                      return index[1] < columns[1];
-                    }) |
-                    rng::views::transform([=](auto &&elem) {
-                      auto &&[index, v] = elem;
-                      auto &&[i, j] = index;
-                      return reference(key_type(i - rows[0], j - columns[0]),
-                                       v);
-                    });
-           }) |
-           rng::views::join;
+    assert(columns[0] == 0 && columns[1] == shape_[1] - 1);
+    return get_horizontal_slice(rows[0], rows[1]);
   }
 
-  auto values_data() const { return values_; }
+  auto values_data() const {
+      return values_;
+  }
 
-  auto rowptr_data() const { return rowptr_; }
+  auto rowptr_data() const {
+      return rowptr_;
+  }
 
-  auto colind_data() const { return colind_; }
+  auto colind_data() const {
+      return colind_;
+  }
 
 private:
+
+  auto get_row_ptr(index_type row) const {
+    return rowptr_[row] - rowptr_[0];
+  }
   TIter values_;
   IIter rowptr_;
   IIter colind_;
@@ -214,7 +215,7 @@ private:
   size_type nnz_;
 
   size_type rank_;
-  key_type idx_offset_;
+  index_type row_offset_; 
 };
 
 template <typename TIter, typename IIter, typename... Args>
