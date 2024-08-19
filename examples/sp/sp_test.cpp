@@ -13,6 +13,6 @@ int main(int argc, char **argv) {
   
   std::size_t n = 32;
 
-  sp::distributed_vector<int> v(n);
+  dr::sp::distributed_vector<int> v(n);
   return 0;
 }
