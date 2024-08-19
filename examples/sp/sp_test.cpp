@@ -10,5 +10,9 @@ int main(int argc, char **argv) {
   auto devices = dr::sp::get_numa_devices(sycl::default_selector_v);
   fmt::print("Number of found devices {}\n", devices.size());
   dr::sp::init(devices);
+  
+  std::size_t n = 32;
+
+  sp::distributed_vector<int> v(n);
   return 0;
 }
