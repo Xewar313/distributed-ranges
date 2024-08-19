@@ -29,6 +29,7 @@ add_sp_example_no_test(matrix_example) # PI_ERROR_DEVICE_NOT_FOUND
 add_sp_example_no_test(gemm_example) # PI_ERROR_DEVICE_NOT_FOUND
 add_sp_example_no_test(gemm_benchmark) # PI_ERROR_DEVICE_NOT_FOUND
 add_sp_example(sparse_test)
+add_sp_example_no_test(sp_test) # PI_ERROR_DEVICE_NOT_FOUND
 add_sp_example_no_test(take_example) # PI_ERROR_DEVICE_NOT_FOUND
 add_sp_example_no_test(test_range) # due to DRA-81
 add_sp_example_no_test(zip_example) # PI_ERROR_DEVICE_NOT_FOUND
